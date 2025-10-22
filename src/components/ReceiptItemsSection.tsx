@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { ReceiptItem, Guest } from '../App';
-import { X, Edit2, Check } from 'lucide-react';
+import { X, Edit2, Check, ChevronDown } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+} from './ui/dropdown-menu';
 
 interface ReceiptItemsSectionProps {
   items: ReceiptItem[];
@@ -102,23 +108,60 @@ export function ReceiptItemsSection({
                   </div>
 
                   {guests.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {guests.map((guest) => {
-                        const isAssigned = item.assignedTo.includes(guest.id);
-                        return (
-                          <Badge
-                            key={guest.id}
-                            onClick={() => onToggleAssignment(item.id, guest.id)}
-                            style={{ 
-                              backgroundColor: isAssigned ? guest.color : '#e5e7eb',
-                              color: isAssigned ? 'white' : '#6b7280'
-                            }}
-                            className="cursor-pointer text-xs"
+                    <div className="flex items-center gap-2 mt-2">
+                      {/* Display assigned guest badges */}
+                      <div className="flex flex-wrap gap-1">
+                        {guests
+                          .filter(guest => item.assignedTo.includes(guest.id))
+                          .map(guest => (
+                            <Badge
+                              key={guest.id}
+                              style={{ backgroundColor: guest.color }}
+                              className="text-xs text-white"
+                            >
+                              {guest.name}
+                            </Badge>
+                          ))}
+                      </div>
+                      
+                      {/* Dropdown for guest assignment */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex cursor-pointer">
+                          <Button 
+                            type="button"
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 gap-1 text-gray-600 hover:text-gray-900"
                           >
-                            {guest.name}
-                          </Badge>
-                        );
-                      })}
+                            <span>Assign Guests</span>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent 
+                          align="start" 
+                          className="w-52 p-0 bg-white rounded-lg shadow-lg border border-gray-200"
+                        >
+                          <div className="px-3 py-2 text-sm text-gray-600 border-b border-gray-100">
+                            Select who shared this item:
+                          </div>
+                          {guests.map(guest => (
+                            <DropdownMenuCheckboxItem
+                              key={guest.id}
+                              checked={item.assignedTo.includes(guest.id)}
+                              onCheckedChange={() => onToggleAssignment(item.id, guest.id)}
+                              className="px-3 py-2 cursor-pointer hover:bg-gray-50 focus:bg-gray-50 data-[state=checked]:bg-purple-50"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div 
+                                  className="w-3 h-3 rounded-full flex-shrink-0" 
+                                  style={{ backgroundColor: guest.color }} 
+                                />
+                                <span className="text-sm text-gray-700">{guest.name}</span>
+                              </div>
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   )}
                 </>

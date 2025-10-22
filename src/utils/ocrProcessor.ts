@@ -7,22 +7,20 @@ export async function processReceiptImage(
 ): Promise<ReceiptItem[]> {
   try {
     // Create an image element from the file
-    console.log('Starting OCR processing for file:', file.name);
     const imageElement = await createImageElement(file);
     
-    const worker = await createWorker('eng');
-    
-    // Set up progress logging
-    worker.setLogger((m) => {
-      if (m.status === 'recognizing text' && onProgress) {
-        onProgress(m.progress);
+    const worker = await createWorker('eng', undefined, {
+      logger: (m) => {
+        if (m.status === 'recognizing text' && onProgress) {
+          onProgress(m.progress);
+        }
       }
     });
 
     const { data: { text } } = await worker.recognize(imageElement);
     await worker.terminate();
-    console.log('OCR Text:', text);
 
+    // Parse the extracted text to find items and prices
     return parseReceiptText(text);
   } catch (error) {
     console.error('OCR Error:', error);
