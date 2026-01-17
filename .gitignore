@@ -1,6 +1,21 @@
-costVenv/
+# Dependencies
 node_modules/
+costVenv/
+
+# Build Output
 build/
+dist/
+
+# Environment Variables
 *.env
-DEPLOYMENT.md
+.env.local
+
+# Backend Data
+sessions.json
 *sessions.json
+
+# Documentation
+DEPLOYMENT.md
+
+# System Files
+.DS_Store
