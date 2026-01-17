@@ -1,3 +1,6 @@
 costVenv/
 node_modules/
 build/
+*.env
+DEPLOYMENT.md
+*sessions.json
