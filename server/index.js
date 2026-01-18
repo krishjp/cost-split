@@ -114,7 +114,10 @@ io.on('connection', (socket) => {
 
             // Update fields
             if (data.items) session.items = data.items;
-            if (data.guests) session.guests = data.guests;
+            if (data.guests) {
+                session.guests = data.guests;
+                session.markModified('guests');
+            }
             if (data.tax !== undefined) session.tax = data.tax;
             if (data.tip !== undefined) session.tip = data.tip;
 
