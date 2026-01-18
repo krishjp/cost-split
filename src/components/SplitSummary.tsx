@@ -1,8 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Guest, ReceiptItem } from '../App';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+
 
 interface SplitSummaryProps {
   items: ReceiptItem[];
@@ -10,6 +12,8 @@ interface SplitSummaryProps {
   taxPercentage: number;
   tipPercentage: number;
   onUpdateTaxTip: (tax: number, tip: number) => void;
+  isAdmin: boolean;
+  onUpdatePayment: (guestId: string, amount: number) => void;
 }
 
 export function SplitSummary({
@@ -17,7 +21,9 @@ export function SplitSummary({
   guests,
   taxPercentage,
   tipPercentage,
-  onUpdateTaxTip
+  onUpdateTaxTip,
+  isAdmin,
+  onUpdatePayment
 }: SplitSummaryProps) {
 
   // Calculate raw subtotal for a guest (items only)
@@ -124,26 +130,44 @@ export function SplitSummary({
             const guestTax = taxAmount * ratio;
             const guestTip = tipAmount * ratio;
             const guestTotal = guestSubtotal + guestTax + guestTip;
+            const paidAmount = guest.paidAmount || 0;
+            const remaining = guestTotal - paidAmount;
 
             const itemCount = items.filter(item => item.assignedTo.includes(guest.id)).length;
 
             return (
-              <div key={guest.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: guest.color }}
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{guest.name}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      ${guestSubtotal.toFixed(2)} + ${guestTax.toFixed(2)} tax + ${guestTip.toFixed(2)} tip
+              <div key={guest.id} className="p-3 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: guest.color }}
+                    />
+                    <div>
+                      <span className="text-sm font-medium block">{guest.name}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {itemCount} items
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold block">${guestTotal.toFixed(2)}</span>
+                    <span className={`text-[10px] ${remaining > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
+                      {remaining > 0.01 ? `Owes $${remaining.toFixed(2)}` : 'Setted Up'}
                     </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="font-bold block">${guestTotal.toFixed(2)}</span>
-                  <span className="text-[10px] text-muted-foreground">{itemCount} items</span>
+
+                <div className="bg-muted/30 rounded p-2 text-xs flex justify-between items-center">
+                  <span className="text-muted-foreground">Paid Amount:</span>
+                  {isAdmin ? (
+                    <PaymentInput
+                      value={paidAmount}
+                      onChange={(amount) => onUpdatePayment(guest.id, amount)}
+                    />
+                  ) : (
+                    <span className="font-medium">${paidAmount.toFixed(2)}</span>
+                  )}
                 </div>
               </div>
             );
@@ -158,6 +182,46 @@ export function SplitSummary({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function PaymentInput({ value, onChange }: { value: number, onChange: (val: number) => void }) {
+  const [localValue, setLocalValue] = useState(value.toString());
+
+  // Sync local state when prop changes (unless focused? handled naturally by React keys if we wanted, but here simpler)
+  // Actually if we type, we don't want props to overwrite immediately if socket is slow.
+  // But since we only emit on blur, props shouldn't change while typing unless someone else updates it.
+
+  useEffect(() => {
+    setLocalValue(value.toString());
+  }, [value]);
+
+  const handleBlur = () => {
+    const num = parseFloat(localValue);
+    if (!isNaN(num) && num !== value) {
+      onChange(num);
+    }
+  };
+
+  return (
+    <div className="relative w-24">
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+      <Input
+        type="number"
+        min="0"
+        step="0.01"
+        value={localValue}
+        onChange={(e) => setLocalValue(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            handleBlur();
+            e.currentTarget.blur();
+          }
+        }}
+        className="h-7 text-right pl-4 bg-background"
+      />
     </div>
   );
 }

@@ -4,12 +4,15 @@ import { ReceiptItemsSection } from './components/ReceiptItemsSection';
 import { GuestsSection } from './components/GuestsSection';
 import { SplitSummary } from './components/SplitSummary';
 import { GuestView } from './components/GuestView';
+import { CreateSessionDialog } from './components/CreateSessionDialog';
+import { AdminLoginDialog } from './components/AdminLoginDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Card } from './components/ui/card';
 import { Button } from './components/ui/button';
-import { Receipt, Users, Calculator, Link as LinkIcon, Share2 } from 'lucide-react';
+import { Receipt, Users, Calculator, Link as LinkIcon, Share2, LogOut } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
+import { Loader2, ServerCrash } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -24,6 +27,7 @@ export interface Guest {
   id: string;
   name: string;
   color: string;
+  paidAmount: number;
 }
 
 export default function App() {
@@ -35,9 +39,33 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isGuestView, setIsGuestView] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'checking' | 'awake' | 'down'>('checking');
+
+  // Check Server Health
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/health`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          setServerStatus('awake');
+        } else {
+          throw new Error("Server not ready");
+        }
+      } catch (err) {
+        console.log("Server sleeping...", err);
+        setServerStatus('down');
+        // Retry after 2 seconds
+        setTimeout(checkHealth, 2000);
+      }
+    };
+    checkHealth();
+  }, []);
 
   // Initialize Socket and Session
   useEffect(() => {
+    if (serverStatus !== 'awake') return;
+
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('session');
 
@@ -48,11 +76,34 @@ export default function App() {
 
     if (sid) {
       setSessionId(sid);
+      // Check for persisted Admin rights (optional, maybe clear on close?)
+      // For PIN based, we probably want to persist it for convenience on same device
+      const storedPin = localStorage.getItem(`cost-splitting-pin-${sid}`);
+      if (storedPin) {
+        verifyPin(sid, storedPin).then(success => {
+          if (success) setIsAdmin(true);
+        });
+      }
       connectSocket(sid);
-    } else {
-      createSession();
     }
-  }, []);
+    // Removed auto createSession
+  }, [serverStatus]);
+
+  const verifyPin = async (sid: string, pin: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/api/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid, pin })
+      });
+      if (res.ok) {
+        return true;
+      }
+    } catch (err) {
+      console.error("Verify PIN failed", err);
+    }
+    return false;
+  };
 
   const connectSocket = (sid: string) => {
     const newSocket = io(API_URL);
@@ -85,12 +136,21 @@ export default function App() {
     return () => newSocket.close();
   };
 
-  const createSession = async () => {
+  const createSession = async (pin: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/create-session`, { method: 'POST' });
+      setIsProcessing(true);
+      const res = await fetch(`${API_URL}/api/create-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
       const data = await res.json();
       const sid = data.sessionId;
       setSessionId(sid);
+      setIsAdmin(true);
+
+      // Persist pin for this user
+      localStorage.setItem(`cost-splitting-pin-${sid}`, pin);
 
       // Update URL without reloading
       const url = new URL(window.location.href);
@@ -98,11 +158,34 @@ export default function App() {
       window.history.pushState({}, '', url);
 
       connectSocket(sid);
+      toast.success("Session Created!");
     } catch (err) {
       console.error("Failed to create session", err);
-      toast.error("Failed to connect to server. Ensure local backend is running.");
+      toast.error("Failed to connect to server.");
+    } finally {
+      setIsProcessing(false);
     }
   };
+
+  const handleAdminLogin = async (pin: string) => {
+    if (!sessionId) return false;
+    const success = await verifyPin(sessionId, pin);
+    if (success) {
+      setIsAdmin(true);
+      localStorage.setItem(`cost-splitting-pin-${sessionId}`, pin);
+      toast.success("Admin Access Granted");
+      return true;
+    }
+    return false;
+  };
+
+  const handleLogout = () => {
+    setIsAdmin(false);
+    if (sessionId) {
+      localStorage.removeItem(`cost-splitting-pin-${sessionId}`);
+    }
+    toast.info("Logged out of Admin mode");
+  }
 
   const syncUpdate = (data: { items?: ReceiptItem[], guests?: Guest[], tax?: number, tip?: number }) => {
     if (!socket || !sessionId) return;
@@ -174,13 +257,64 @@ export default function App() {
     syncUpdate({ items: newItems });
   };
 
+  const handleUpdatePayment = (guestId: string, amount: number) => {
+    const newGuests = guests.map(g =>
+      g.id === guestId ? { ...g, paidAmount: amount } : g
+    );
+    setGuests(newGuests);
+    syncUpdate({ guests: newGuests });
+  };
+
   const copyShareLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
     toast.success("Link copied to clipboard!");
   };
 
-  if (!sessionId) return <div className="flex items-center justify-center min-h-screen">Loading Session...</div>;
+  // Landing Page
+  if (!sessionId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-center space-y-8 p-8 max-w-lg">
+          <div>
+            <h1 className="text-6xl mb-4">🍱</h1>
+            <h1 className="text-4xl font-bold text-primary mb-2">Cost Splitting Portal</h1>
+            <p className="text-muted-foreground text-lg">
+              Easily split bills with friends. Upload receipts, assign items, and track payments.
+            </p>
+          </div>
+
+          {serverStatus === 'awake' ? (
+            <CreateSessionDialog
+              onCreateSession={createSession}
+              isProcessing={isProcessing}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-4 bg-muted/50 p-6 rounded-lg border border-border">
+              {serverStatus === 'checking' ? (
+                <>
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                  <p className="text-sm font-medium">Connecting to server...</p>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Waking up server...</p>
+                    <p className="text-xs text-muted-foreground">This may take up to 60 seconds on the free tier.</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground mt-8">
+            No account needed. Just create a session and share the link.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8 font-sans">
@@ -190,7 +324,16 @@ export default function App() {
             <h1 className="text-4xl mb-2 font-bold text-primary">🍱 Cost Splitting Portal</h1>
             <p className="text-muted-foreground">Upload a receipt or add items manually to split the bill.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {isAdmin ? (
+              <Button variant="outline" size="sm" onClick={handleLogout} className="text-red-500 hover:text-red-700 hover:bg-red-50">
+                <LogOut className="w-4 h-4 mr-2" />
+                Admin Logout
+              </Button>
+            ) : (
+              <AdminLoginDialog onVerifyPin={handleAdminLogin} />
+            )}
+
             <Button variant="outline" onClick={() => setIsGuestView(!isGuestView)}>
               {isGuestView ? "Switch to Creator View" : "Guest View Preview"}
             </Button>
@@ -209,7 +352,7 @@ export default function App() {
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Upload Section - Moved to less prominent location or kept here but styled */}
+            {/* Upload Section */}
             <Card className="lg:col-span-3 p-6 bg-card border-2 border-dashed border-border shadow-sm">
               <div className="flex flex-col items-center">
                 <p className="text-sm text-muted-foreground mb-4">Start by adding items manually below, or upload a receipt image.</p>
@@ -275,6 +418,8 @@ export default function App() {
                   taxPercentage={taxPercentage}
                   tipPercentage={tipPercentage}
                   onUpdateTaxTip={handleUpdateTaxTip}
+                  isAdmin={isAdmin}
+                  onUpdatePayment={handleUpdatePayment}
                 />
               </Card>
             </div>

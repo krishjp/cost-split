@@ -6,6 +6,7 @@ const sessionSchema = new mongoose.Schema({
     guests: { type: Array, default: [] },
     tax: { type: Number, default: 0 },
     tip: { type: Number, default: 0 },
+    adminPin: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
 });
 
