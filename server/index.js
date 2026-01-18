@@ -29,12 +29,24 @@ mongoose.connect(MONGO_URI)
 
 // API Endpoints
 
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
+
 // Create a new session
 app.post('/api/create-session', async (req, res) => {
+    const { pin } = req.body;
+
+    if (!pin || pin.length < 4 || pin.length > 6) {
+        return res.status(400).json({ error: "PIN must be 4-6 digits" });
+    }
+
     const sessionId = uuidv4();
     try {
         const session = new Session({
             sessionId,
+            adminPin: pin,
             items: [],
             guests: []
         });
@@ -45,6 +57,26 @@ app.post('/api/create-session', async (req, res) => {
         res.status(500).json({ error: "Failed to create session" });
     }
 });
+
+app.post('/api/verify-pin', async (req, res) => {
+    const { sessionId, pin } = req.body;
+    try {
+        const session = await Session.findOne({ sessionId });
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        if (session.adminPin === pin) {
+            res.json({ success: true });
+        } else {
+            res.status(401).json({ error: 'Invalid PIN' });
+        }
+    } catch (err) {
+        console.error("Error verifying pin:", err);
+        res.status(500).json({ error: "Verification failed" });
+    }
+});
+
 
 // Get session data
 app.get('/api/session/:id', async (req, res) => {
