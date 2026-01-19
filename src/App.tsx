@@ -396,7 +396,7 @@ export default function App() {
             )}
 
             <Button variant="outline" onClick={() => setIsGuestView(!isGuestView)}>
-              {isGuestView ? "Switch to Creator View" : "Guest View"}
+              {isGuestView ? "Switch to Summary View" : "Guest View"}
             </Button>
             <Button onClick={copyShareLink} className="gap-2">
               <Share2 className="w-4 h-4" />
@@ -414,16 +414,18 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Upload Section */}
-            <Card className="lg:col-span-3 p-6 bg-card border-2 border-dashed border-border shadow-sm">
-              <div className="flex flex-col items-center">
-                <p className="text-sm text-muted-foreground mb-4">Start by adding items manually below, or upload a receipt image.</p>
-                <ImageUploader
-                  onItemsExtracted={handleItemsExtracted}
-                  isProcessing={isProcessing}
-                  setIsProcessing={setIsProcessing}
-                />
-              </div>
-            </Card>
+            {isAdmin && (
+              <Card className="lg:col-span-3 p-6 bg-card border-2 border-dashed border-border shadow-sm">
+                <div className="flex flex-col items-center">
+                  <p className="text-sm text-muted-foreground mb-4">Start by adding items manually below, or upload a receipt image.</p>
+                  <ImageUploader
+                    onItemsExtracted={handleItemsExtracted}
+                    isProcessing={isProcessing}
+                    setIsProcessing={setIsProcessing}
+                  />
+                </div>
+              </Card>
+            )}
 
             {/* Main Content */}
             <div className="lg:col-span-2 space-y-6">
@@ -453,6 +455,7 @@ export default function App() {
                       setReceiptItems(newItems);
                       syncUpdate({ items: newItems });
                     }}
+                    isAdmin={isAdmin}
                   />
                 </TabsContent>
 

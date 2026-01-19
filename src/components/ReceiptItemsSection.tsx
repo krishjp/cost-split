@@ -19,6 +19,7 @@ interface ReceiptItemsSectionProps {
   onRemoveItem: (itemId: string) => void;
   onUpdateItem: (itemId: string, updates: Partial<ReceiptItem>) => void;
   onAddItem: (item: ReceiptItem) => void;
+  isAdmin: boolean;
 }
 
 export function ReceiptItemsSection({
@@ -27,7 +28,8 @@ export function ReceiptItemsSection({
   onToggleAssignment,
   onRemoveItem,
   onUpdateItem,
-  onAddItem
+  onAddItem,
+  isAdmin
 }: ReceiptItemsSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -127,36 +129,38 @@ export function ReceiptItemsSection({
   return (
     <div className="space-y-6">
       {/* Manual Entry Form */}
-      <div className="bg-card p-4 rounded-xl border border-border shadow-sm">
-        <h3 className="text-sm font-medium mb-3 text-muted-foreground">Add Item Manually</h3>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Item Name"
-            value={newItemName}
-            onChange={(e) => setNewItemName(e.target.value)}
-            className="flex-grow"
-          />
-          <Input
-            type="number"
-            placeholder="Qty"
-            className="w-16"
-            min="1"
-            value={newItemQuantity}
-            onChange={(e) => setNewItemQuantity(e.target.value)}
-          />
-          <Input
-            type="number"
-            placeholder="Price"
-            className="w-24"
-            value={newItemPrice}
-            onChange={(e) => setNewItemPrice(e.target.value)}
-          />
-          <Button onClick={handleManualAdd} disabled={!newItemName || !newItemPrice}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add
-          </Button>
+      {isAdmin && (
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm">
+          <h3 className="text-sm font-medium mb-3 text-muted-foreground">Add Item Manually</h3>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Item Name"
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              className="flex-grow"
+            />
+            <Input
+              type="number"
+              placeholder="Qty"
+              className="w-16"
+              min="1"
+              value={newItemQuantity}
+              onChange={(e) => setNewItemQuantity(e.target.value)}
+            />
+            <Input
+              type="number"
+              placeholder="Price"
+              className="w-24"
+              value={newItemPrice}
+              onChange={(e) => setNewItemPrice(e.target.value)}
+            />
+            <Button onClick={handleManualAdd} disabled={!newItemName || !newItemPrice}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {items.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
@@ -212,14 +216,16 @@ export function ReceiptItemsSection({
                     <div className="space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-foreground">{item.name}</p>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => startEdit(item)}
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Edit2 className="w-3 h-3 text-muted-foreground" />
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => startEdit(item)}
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Edit2 className="w-3 h-3 text-muted-foreground" />
+                          </Button>
+                        )}
                       </div>
                       <div className="flex justify-between items-baseline">
                         <p className="text-muted-foreground text-xs">
@@ -261,12 +267,14 @@ export function ReceiptItemsSection({
                   </>
                 )}
 
-                <button
-                  onClick={() => onRemoveItem(item.id)}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center hover:bg-destructive/90 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => onRemoveItem(item.id)}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center hover:bg-destructive/90 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}
