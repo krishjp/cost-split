@@ -20,7 +20,8 @@ export interface ReceiptItem {
   id: string;
   name: string;
   price: number;
-  assignedTo: string[];
+  quantity: number;
+  assignedTo: string[][]; // Index i = assignments for unit i
 }
 
 export interface Guest {
@@ -38,7 +39,7 @@ export default function App() {
   const [tipPercentage, setTipPercentage] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [isGuestView, setIsGuestView] = useState(false);
+  const [isGuestView, setIsGuestView] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [serverStatus, setServerStatus] = useState<'checking' | 'awake' | 'down'>('checking');
 
@@ -81,7 +82,10 @@ export default function App() {
       const storedPin = localStorage.getItem(`cost-splitting-pin-${sid}`);
       if (storedPin) {
         verifyPin(sid, storedPin).then(success => {
-          if (success) setIsAdmin(true);
+          if (success) {
+            setIsAdmin(true);
+            setIsGuestView(false);
+          }
         });
       }
       connectSocket(sid);
@@ -105,6 +109,32 @@ export default function App() {
     return false;
   };
 
+  // normalize items to ensure backward compatibility
+  const normalizeItems = (items: any[]): ReceiptItem[] => {
+    return items.map(item => {
+      const quantity = item.quantity || 1;
+      let assignedTo = item.assignedTo;
+
+      if (Array.isArray(assignedTo) && (assignedTo.length === 0 || typeof assignedTo[0] === 'string')) {
+        assignedTo = [assignedTo];
+      }
+
+      if (!Array.isArray(assignedTo)) {
+        assignedTo = [];
+      }
+
+      while (assignedTo.length < quantity) {
+        assignedTo.push([]);
+      }
+
+      return {
+        ...item,
+        quantity,
+        assignedTo: assignedTo as string[][]
+      };
+    });
+  };
+
   const connectSocket = (sid: string) => {
     const newSocket = io(API_URL);
     setSocket(newSocket);
@@ -118,7 +148,7 @@ export default function App() {
     fetch(`${API_URL}/api/session/${sid}`)
       .then(res => res.json())
       .then(data => {
-        if (data.items) setReceiptItems(data.items);
+        if (data.items) setReceiptItems(normalizeItems(data.items));
         if (data.guests) setGuests(data.guests);
         if (data.tax !== undefined) setTaxPercentage(data.tax);
         if (data.tip !== undefined) setTipPercentage(data.tip);
@@ -127,7 +157,7 @@ export default function App() {
 
     newSocket.on('session-updated', (data) => {
       console.log('Session updated:', data);
-      if (data.items) setReceiptItems(data.items);
+      if (data.items) setReceiptItems(normalizeItems(data.items));
       if (data.guests) setGuests(data.guests);
       if (data.tax !== undefined) setTaxPercentage(data.tax);
       if (data.tip !== undefined) setTipPercentage(data.tip);
@@ -148,11 +178,11 @@ export default function App() {
       const sid = data.sessionId;
       setSessionId(sid);
       setIsAdmin(true);
+      setIsGuestView(false);
 
       // Persist pin for this user
       localStorage.setItem(`cost-splitting-pin-${sid}`, pin);
 
-      // Update URL without reloading
       const url = new URL(window.location.href);
       url.searchParams.set('session', sid);
       window.history.pushState({}, '', url);
@@ -172,6 +202,7 @@ export default function App() {
     const success = await verifyPin(sessionId, pin);
     if (success) {
       setIsAdmin(true);
+      setIsGuestView(false);
       localStorage.setItem(`cost-splitting-pin-${sessionId}`, pin);
       toast.success("Admin Access Granted");
       return true;
@@ -181,6 +212,7 @@ export default function App() {
 
   const handleLogout = () => {
     setIsAdmin(false);
+    setIsGuestView(true);
     if (sessionId) {
       localStorage.removeItem(`cost-splitting-pin-${sessionId}`);
     }
@@ -200,10 +232,11 @@ export default function App() {
 
   // HANDLERS
 
-  const handleItemsExtracted = (items: ReceiptItem[]) => {
-    const newItems = [...receiptItems, ...items];
-    setReceiptItems(newItems);
-    syncUpdate({ items: newItems });
+  const handleItemsExtracted = (items: any[]) => {
+    const newItems = normalizeItems(items);
+    const updatedItems = [...receiptItems, ...newItems];
+    setReceiptItems(updatedItems);
+    syncUpdate({ items: updatedItems });
   };
 
   const handleAddGuest = (guest: Guest) => {
@@ -219,22 +252,35 @@ export default function App() {
     // Remove guest from assignments
     const newItems = receiptItems.map(item => ({
       ...item,
-      assignedTo: item.assignedTo.filter(id => id !== guestId)
+      assignedTo: item.assignedTo.map(unitSplits => unitSplits.filter(id => id !== guestId))
     }));
     setReceiptItems(newItems);
 
     syncUpdate({ guests: newGuests, items: newItems });
   };
 
-  const handleToggleAssignment = (itemId: string, guestId: string) => {
+  const handleToggleAssignment = (itemId: string, guestId: string, unitIndex: number = 0) => {
     const newItems = receiptItems.map(item => {
       if (item.id === itemId) {
-        const isAssigned = item.assignedTo.includes(guestId);
+        // Ensure assignedTo has enough arrays for the quantity
+        const currentAssignedTo = [...item.assignedTo];
+        // Fill gaps if needed
+        while (currentAssignedTo.length < item.quantity) {
+          currentAssignedTo.push([]);
+        }
+
+        const unitAssignments = currentAssignedTo[unitIndex] || [];
+        const isAssigned = unitAssignments.includes(guestId);
+
+        const newUnitAssignments = isAssigned
+          ? unitAssignments.filter(id => id !== guestId)
+          : [...unitAssignments, guestId];
+
+        currentAssignedTo[unitIndex] = newUnitAssignments;
+
         return {
           ...item,
-          assignedTo: isAssigned
-            ? item.assignedTo.filter(id => id !== guestId)
-            : [...item.assignedTo, guestId]
+          assignedTo: currentAssignedTo
         };
       }
       return item;
@@ -250,9 +296,24 @@ export default function App() {
   };
 
   const handleUpdateItem = (itemId: string, updates: Partial<ReceiptItem>) => {
-    const newItems = receiptItems.map(item =>
-      item.id === itemId ? { ...item, ...updates } : item
-    );
+    const newItems = receiptItems.map(item => {
+      if (item.id === itemId) {
+        const updatedItem = { ...item, ...updates };
+        // If quantity changed, adjust assignedTo array size
+        if (updates.quantity !== undefined) {
+          const newQty = updates.quantity;
+          let newAssignedTo = [...item.assignedTo];
+          if (newQty > newAssignedTo.length) {
+            while (newAssignedTo.length < newQty) newAssignedTo.push([]);
+          } else if (newQty < newAssignedTo.length) {
+            newAssignedTo = newAssignedTo.slice(0, newQty);
+          }
+          updatedItem.assignedTo = newAssignedTo;
+        }
+        return updatedItem;
+      }
+      return item;
+    });
     setReceiptItems(newItems);
     syncUpdate({ items: newItems });
   };
@@ -335,7 +396,7 @@ export default function App() {
             )}
 
             <Button variant="outline" onClick={() => setIsGuestView(!isGuestView)}>
-              {isGuestView ? "Switch to Creator View" : "Guest View Preview"}
+              {isGuestView ? "Switch to Creator View" : "Guest View"}
             </Button>
             <Button onClick={copyShareLink} className="gap-2">
               <Share2 className="w-4 h-4" />

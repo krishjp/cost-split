@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, CircleIcon, Check } from "lucide-react";
 
 import { cn } from "./utils";
 
@@ -94,18 +94,18 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       className={cn(
-        "relative flex w-full cursor-pointer items-center py-2 px-3 text-sm outline-none transition-colors",
-        "hover:bg-gray-50 focus:bg-gray-50",
+        "group relative flex w-full cursor-pointer items-center py-2 px-3 text-sm outline-none transition-colors",
+        "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        "data-[state=checked]:bg-purple-50",
+        "data-[state=checked]:bg-accent/50",
         className
       )}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-3 flex h-4 w-4 items-center justify-center rounded border border-gray-300 transition-colors data-[state=checked]:border-purple-500 data-[state=checked]:bg-purple-500">
+      <span className="pointer-events-none absolute left-3 flex h-4 w-4 items-center justify-center rounded border border-input shadow-sm transition-colors group-data-[state=checked]:border-primary group-data-[state=checked]:bg-primary">
         <DropdownMenuPrimitive.ItemIndicator>
-          <CheckIcon className="h-3 w-3 text-white" />
+          <Check className="h-2.5 w-2.5 text-primary-foreground" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       <span className="pl-7">{children}</span>
