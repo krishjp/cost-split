@@ -29,14 +29,19 @@ export function SplitSummary({
   // Calculate raw subtotal for a guest (items only)
   const calculateGuestSubtotal = (guestId: string): number => {
     return items.reduce((total, item) => {
-      if (item.assignedTo.includes(guestId) && item.assignedTo.length > 0) {
-        return total + (item.price / item.assignedTo.length);
+      let itemTotalForGuest = 0;
+      // Iterate through each unit of quantity
+      for (let i = 0; i < item.quantity; i++) {
+        const unitAssignments = item.assignedTo[i] || [];
+        if (unitAssignments.includes(guestId) && unitAssignments.length > 0) {
+          itemTotalForGuest += (item.price / unitAssignments.length);
+        }
       }
-      return total;
+      return total + itemTotalForGuest;
     }, 0);
   };
 
-  const subtotal = items.reduce((sum, item) => sum + item.price, 0);
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   // Calculate Tax and Tip amounts based on percentages
   const taxAmount = subtotal * (taxPercentage / 100);
@@ -44,10 +49,14 @@ export function SplitSummary({
   const totalAmount = subtotal + taxAmount + tipAmount;
 
   const assignedSubtotal = items.reduce((sum, item) => {
-    if (item.assignedTo.length > 0) {
-      return sum + item.price;
+    let itemAssignedValue = 0;
+    for (let i = 0; i < item.quantity; i++) {
+      const unitAssignments = item.assignedTo[i] || [];
+      if (unitAssignments.length > 0) {
+        itemAssignedValue += item.price;
+      }
     }
-    return sum;
+    return sum + itemAssignedValue;
   }, 0);
 
   const unassignedSubtotal = subtotal - assignedSubtotal;
@@ -133,7 +142,10 @@ export function SplitSummary({
             const paidAmount = guest.paidAmount || 0;
             const remaining = guestTotal - paidAmount;
 
-            const itemCount = items.filter(item => item.assignedTo.includes(guest.id)).length;
+            const itemCount = items.reduce((count, item) => {
+              const unitsInvolved = item.assignedTo.filter(unitSplits => unitSplits.includes(guest.id)).length;
+              return count + unitsInvolved;
+            }, 0);
 
             return (
               <div key={guest.id} className="p-3 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
@@ -188,10 +200,6 @@ export function SplitSummary({
 
 function PaymentInput({ value, onChange }: { value: number, onChange: (val: number) => void }) {
   const [localValue, setLocalValue] = useState(value.toString());
-
-  // Sync local state when prop changes (unless focused? handled naturally by React keys if we wanted, but here simpler)
-  // Actually if we type, we don't want props to overwrite immediately if socket is slow.
-  // But since we only emit on blur, props shouldn't change while typing unless someone else updates it.
 
   useEffect(() => {
     setLocalValue(value.toString());

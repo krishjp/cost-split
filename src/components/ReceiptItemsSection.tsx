@@ -15,7 +15,7 @@ import {
 interface ReceiptItemsSectionProps {
   items: ReceiptItem[];
   guests: Guest[];
-  onToggleAssignment: (itemId: string, guestId: string) => void;
+  onToggleAssignment: (itemId: string, guestId: string, unitIndex: number) => void;
   onRemoveItem: (itemId: string) => void;
   onUpdateItem: (itemId: string, updates: Partial<ReceiptItem>) => void;
   onAddItem: (item: ReceiptItem) => void;
@@ -32,23 +32,28 @@ export function ReceiptItemsSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editPrice, setEditPrice] = useState('');
+  const [editQuantity, setEditQuantity] = useState('1');
 
   // Manual Entry State
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemQuantity, setNewItemQuantity] = useState('1');
 
   const handleManualAdd = () => {
     if (newItemName.trim() && newItemPrice) {
       const price = parseFloat(newItemPrice);
-      if (!isNaN(price) && price > 0) {
+      const quantity = parseInt(newItemQuantity) || 1;
+      if (!isNaN(price) && price > 0 && quantity > 0) {
         onAddItem({
           id: `manual-${Date.now()}`,
           name: newItemName.trim(),
           price,
-          assignedTo: []
+          quantity,
+          assignedTo: Array(quantity).fill([])
         });
         setNewItemName('');
         setNewItemPrice('');
+        setNewItemQuantity('1');
       }
     }
   };
@@ -57,14 +62,66 @@ export function ReceiptItemsSection({
     setEditingId(item.id);
     setEditName(item.name);
     setEditPrice(item.price.toString());
+    setEditQuantity(item.quantity.toString());
   };
 
   const saveEdit = (itemId: string) => {
     const price = parseFloat(editPrice);
-    if (editName.trim() && !isNaN(price) && price > 0) {
-      onUpdateItem(itemId, { name: editName.trim(), price });
+    const quantity = parseInt(editQuantity);
+    if (editName.trim() && !isNaN(price) && price > 0 && !isNaN(quantity) && quantity > 0) {
+      onUpdateItem(itemId, { name: editName.trim(), price, quantity });
     }
     setEditingId(null);
+  };
+
+  const renderAssignmentDropdown = (item: ReceiptItem, unitIndex: number) => {
+    const currentAssignments = item.assignedTo[unitIndex] || [];
+
+    return (
+      <DropdownMenu key={unitIndex}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-7 text-xs justify-between font-normal text-muted-foreground hover:text-foreground mb-1"
+          >
+            <span>Unit #{unitIndex + 1}</span>
+            <div className="flex items-center gap-1">
+              <div className="flex -space-x-1">
+                {guests
+                  .filter(g => currentAssignments.includes(g.id))
+                  .slice(0, 3)
+                  .map(g => (
+                    <div key={g.id} className="w-2 h-2 rounded-full ring-1 ring-background" style={{ backgroundColor: g.color }} />
+                  ))}
+              </div>
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </div>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          {/* <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/50 mb-1">
+            {`Who ate Unit #${unitIndex + 1}?`}
+          </div> */}
+          {guests.map(guest => (
+            <DropdownMenuCheckboxItem
+              key={guest.id}
+              checked={currentAssignments.includes(guest.id)}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={() => onToggleAssignment(item.id, guest.id, unitIndex)}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: guest.color }}
+                />
+                <span>{guest.name}</span>
+              </div>
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
   };
 
   return (
@@ -74,10 +131,18 @@ export function ReceiptItemsSection({
         <h3 className="text-sm font-medium mb-3 text-muted-foreground">Add Item Manually</h3>
         <div className="flex gap-2">
           <Input
-            placeholder="Item Name (e.g. Pizza)"
+            placeholder="Item Name"
             value={newItemName}
             onChange={(e) => setNewItemName(e.target.value)}
             className="flex-grow"
+          />
+          <Input
+            type="number"
+            placeholder="Qty"
+            className="w-16"
+            min="1"
+            value={newItemQuantity}
+            onChange={(e) => setNewItemQuantity(e.target.value)}
           />
           <Input
             type="number"
@@ -107,7 +172,7 @@ export function ReceiptItemsSection({
               transition={{ delay: index * 0.05 }}
               className="relative group"
             >
-              <div className="bg-card rounded-xl shadow-sm border border-border hover:border-primary/50 transition-all p-4 pr-10 min-w-[200px]">
+              <div className="bg-card rounded-xl shadow-sm border border-border hover:border-primary/50 transition-all p-4 pr-10 min-w-[220px]">
                 {editingId === item.id ? (
                   <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                     <Input
@@ -116,14 +181,23 @@ export function ReceiptItemsSection({
                       className="h-8 text-sm"
                       placeholder="Item name"
                     />
-                    <Input
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                      className="h-8 text-sm"
-                      type="number"
-                      step="0.01"
-                      placeholder="Price"
-                    />
+                    <div className="flex gap-1">
+                      <Input
+                        value={editQuantity}
+                        onChange={(e) => setEditQuantity(e.target.value)}
+                        className="h-8 text-sm w-16"
+                        type="number"
+                        placeholder="Qty"
+                      />
+                      <Input
+                        value={editPrice}
+                        onChange={(e) => setEditPrice(e.target.value)}
+                        className="h-8 text-sm"
+                        type="number"
+                        step="0.01"
+                        placeholder="Price"
+                      />
+                    </div>
                     <Button
                       size="sm"
                       onClick={() => saveEdit(item.id)}
@@ -147,15 +221,23 @@ export function ReceiptItemsSection({
                           <Edit2 className="w-3 h-3 text-muted-foreground" />
                         </Button>
                       </div>
-                      <p className="text-primary font-bold">${item.price.toFixed(2)}</p>
+                      <div className="flex justify-between items-baseline">
+                        <p className="text-muted-foreground text-xs">
+                          {item.quantity} x ${item.price.toFixed(2)}
+                        </p>
+                        <p className="text-primary font-bold">
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="mt-3">
-                      {/* Guest Badges */}
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {guests
-                          .filter(guest => item.assignedTo.includes(guest.id))
-                          .map(guest => (
+                      {/* Guest Badges (Consolidated view) */}
+                      <div className="flex flex-wrap gap-1 mb-2 min-h-[1.5em]">
+                        {Array.from(new Set(item.assignedTo.flat())).map(guestId => {
+                          const guest = guests.find(g => g.id === guestId);
+                          if (!guest) return null;
+                          return (
                             <Badge
                               key={guest.id}
                               style={{ backgroundColor: guest.color }}
@@ -163,46 +245,17 @@ export function ReceiptItemsSection({
                             >
                               {guest.name}
                             </Badge>
-                          ))}
+                          );
+                        })}
                       </div>
 
-                      {/* Assignment Dropdown */}
+                      {/* Assignment Dropdowns per Unit */}
                       {guests.length > 0 && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full h-7 text-xs justify-between font-normal text-muted-foreground hover:text-foreground"
-                            >
-                              <span>Assign</span>
-                              <ChevronDown className="h-3 w-3 opacity-50" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="start"
-                            className="w-48"
-                          >
-                            <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/50 mb-1">
-                              Who ate this?
-                            </div>
-                            {guests.map(guest => (
-                              <DropdownMenuCheckboxItem
-                                key={guest.id}
-                                checked={item.assignedTo.includes(guest.id)}
-                                onCheckedChange={() => onToggleAssignment(item.id, guest.id)}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <div
-                                    className="w-2 h-2 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: guest.color }}
-                                  />
-                                  <span>{guest.name}</span>
-                                </div>
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
+                          {Array.from({ length: item.quantity }).map((_, unitIdx) =>
+                            renderAssignmentDropdown(item, unitIdx)
+                          )}
+                        </div>
                       )}
                     </div>
                   </>

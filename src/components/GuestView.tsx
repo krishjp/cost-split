@@ -6,11 +6,12 @@ import { Badge } from './ui/badge';
 import { Check, User, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../utils';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 
 interface GuestViewProps {
     items: ReceiptItem[];
     guests: Guest[];
-    onToggleAssignment: (itemId: string, guestId: string) => void;
+    onToggleAssignment: (itemId: string, guestId: string, unitIndex: number) => void;
 }
 
 export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps) {
@@ -19,10 +20,14 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
     const myTotal = useMemo(() => {
         if (!selectedGuestId) return 0;
         return items.reduce((acc, item) => {
-            if (item.assignedTo.includes(selectedGuestId)) {
-                return acc + (item.price / item.assignedTo.length);
+            let itemTotal = 0;
+            for (let i = 0; i < item.quantity; i++) {
+                const unitAssignments = item.assignedTo[i] || [];
+                if (unitAssignments.includes(selectedGuestId)) {
+                    itemTotal += (item.price / unitAssignments.length);
+                }
             }
-            return acc;
+            return acc + itemTotal;
         }, 0);
     }, [items, selectedGuestId]);
 
@@ -30,7 +35,7 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
         return (
             <Card className="max-w-md mx-auto p-6 md:p-8 text-center space-y-6">
                 <div>
-                    <h2 className="text-2xl font-bold mb-2">Welcome! 👋</h2>
+                    <h2 className="text-2xl font-bold mb-2">Welcome!</h2>
                     <p className="text-muted-foreground">Select your name to start selecting your items.</p>
                 </div>
 
@@ -42,7 +47,7 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
                             className="flex items-center gap-3 p-3 rounded-xl border border-border hover:bg-muted/50 transition-colors text-left"
                         >
                             <div
-                                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                                className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold text-lg"
                                 style={{ backgroundColor: guest.color }}
                             >
                                 {guest.name[0].toUpperCase()}
@@ -62,6 +67,16 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
     }
 
     const selectedGuest = guests.find(g => g.id === selectedGuestId);
+
+    // Flatten items for display: Item A (Qty 2) -> Item A #1, Item A #2
+    const displayItems = items.flatMap(item => {
+        return Array.from({ length: item.quantity }).map((_, unitIndex) => ({
+            ...item,
+            unitIndex,
+            // Only this unit's assignments are relevant for the row
+            currentAssignments: item.assignedTo[unitIndex] || []
+        }));
+    });
 
     return (
         <div className="max-w-md mx-auto space-y-4">
@@ -88,13 +103,15 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
 
             <div className="space-y-3 pb-20">
                 <h3 className="text-sm font-medium text-muted-foreground px-1">Tap items you shared or ate:</h3>
-                {items.map((item) => {
-                    const isSelected = item.assignedTo.includes(selectedGuestId);
+                {displayItems.map((displayItem) => {
+                    const isSelected = displayItem.currentAssignments.includes(selectedGuestId);
+                    const uniqueKey = `${displayItem.id}-${displayItem.unitIndex}`;
+
                     return (
                         <motion.div
-                            key={item.id}
+                            key={uniqueKey}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => onToggleAssignment(item.id, selectedGuestId)}
+                            onClick={() => onToggleAssignment(displayItem.id, selectedGuestId, displayItem.unitIndex)}
                             className={cn(
                                 "p-4 rounded-xl border cursor-pointer transition-all duration-200 flex items-center justify-between shadow-sm",
                                 isSelected
@@ -104,24 +121,45 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
                         >
                             <div className="flex-1">
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className="font-medium">{item.name}</span>
-                                    <span className="font-semibold text-primary ml-2">${item.price.toFixed(2)}</span>
+                                    <span className="font-medium">
+                                        {displayItem.name}
+                                        {displayItem.quantity > 1 && <span className="text-muted-foreground text-xs ml-2 font-normal">Unit #{displayItem.unitIndex + 1}</span>}
+                                    </span>
+                                    <span className="font-semibold text-primary ml-2">${displayItem.price.toFixed(2)}</span>
                                 </div>
 
                                 {/* Split details */}
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground h-5">
-                                    {item.assignedTo.length > 0 ? (
-                                        <>
-                                            <User className="w-3 h-3" />
-                                            <span>
-                                                Split by {item.assignedTo.length} person{item.assignedTo.length !== 1 && 's'}
-                                                {isSelected && (
-                                                    <span className="ml-1 text-primary font-medium">
-                                                        (${(item.price / item.assignedTo.length).toFixed(2)} each)
+                                    {displayItem.currentAssignments.length > 0 ? (
+                                        <HoverCard>
+                                            <HoverCardTrigger asChild>
+                                                <div className="flex items-center gap-1 cursor-help hover:text-foreground transition-colors">
+                                                    <User className="w-3 h-3" />
+                                                    <span>
+                                                        Split by {displayItem.currentAssignments.length} person{displayItem.currentAssignments.length !== 1 && 's'}
+                                                        {isSelected && (
+                                                            <span className="ml-1 text-primary font-medium">
+                                                                (${(displayItem.price / displayItem.currentAssignments.length).toFixed(2)} each)
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                )}
-                                            </span>
-                                        </>
+                                                </div>
+                                            </HoverCardTrigger>
+                                            <HoverCardContent className="w-auto p-2">
+                                                <div className="text-xs space-y-1">
+                                                    <p className="font-semibold text-muted-foreground border-b pb-1 mb-1">Split with:</p>
+                                                    {guests
+                                                        .filter(g => displayItem.currentAssignments.includes(g.id))
+                                                        .map(g => (
+                                                            <div key={g.id} className="flex items-center gap-2">
+                                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: g.color }} />
+                                                                <span>{g.name}</span>
+                                                            </div>
+                                                        ))
+                                                    }
+                                                </div>
+                                            </HoverCardContent>
+                                        </HoverCard>
                                     ) : (
                                         <span className="text-muted-foreground/50">Unassigned</span>
                                     )}
