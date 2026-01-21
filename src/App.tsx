@@ -410,6 +410,8 @@ export default function App() {
             items={receiptItems}
             guests={guests}
             onToggleAssignment={handleToggleAssignment}
+            taxPercentage={taxPercentage}
+            tipPercentage={tipPercentage}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -464,6 +466,7 @@ export default function App() {
                     guests={guests}
                     onAddGuest={handleAddGuest}
                     onRemoveGuest={handleRemoveGuest}
+                    isAdmin={isAdmin}
                   />
                 </TabsContent>
               </Tabs>

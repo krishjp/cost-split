@@ -12,14 +12,16 @@ interface GuestViewProps {
     items: ReceiptItem[];
     guests: Guest[];
     onToggleAssignment: (itemId: string, guestId: string, unitIndex: number) => void;
+    taxPercentage: number;
+    tipPercentage: number;
 }
 
-export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps) {
+export function GuestView({ items, guests, onToggleAssignment, taxPercentage, tipPercentage }: GuestViewProps) {
     const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
 
     const myTotal = useMemo(() => {
         if (!selectedGuestId) return 0;
-        return items.reduce((acc, item) => {
+        const subtotal = items.reduce((acc, item) => {
             let itemTotal = 0;
             for (let i = 0; i < item.quantity; i++) {
                 const unitAssignments = item.assignedTo[i] || [];
@@ -29,7 +31,11 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
             }
             return acc + itemTotal;
         }, 0);
-    }, [items, selectedGuestId]);
+
+        const taxAmount = subtotal * (taxPercentage / 100);
+        const tipAmount = subtotal * (tipPercentage / 100);
+        return subtotal + taxAmount + tipAmount;
+    }, [items, selectedGuestId, taxPercentage, tipPercentage]);
 
     if (!selectedGuestId) {
         return (
@@ -96,6 +102,9 @@ export function GuestView({ items, guests, onToggleAssignment }: GuestViewProps)
 
                         <p className="text-2xl font-bold text-primary mt-1">
                             ${myTotal.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                            (incl. {taxPercentage}% tax + {tipPercentage}% tip)
                         </p>
                     </div>
                 </div>
