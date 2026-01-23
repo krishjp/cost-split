@@ -30,7 +30,7 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
     // Process image
     setIsProcessing(true);
     setProgress(10);
-    
+
     try {
       const items = await processReceiptImage(file, (p) => {
         setProgress(10 + (p * 0.9));
@@ -58,12 +58,12 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           onChange={handleFileChange}
           className="hidden"
         />
-        
-        <Button 
+
+        <Button
           onClick={handleUploadClick}
           disabled={isProcessing}
           className="flex items-center gap-2"
@@ -100,9 +100,9 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
 
       {preview && !isProcessing && (
         <div className="mt-4">
-          <img 
-            src={preview} 
-            alt="Receipt preview" 
+          <img
+            src={preview}
+            alt="Receipt preview"
             className="max-h-48 rounded-lg border-2 border-gray-200 object-contain"
           />
         </div>
