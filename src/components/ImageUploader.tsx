@@ -4,6 +4,7 @@ import { Upload, Loader2, Image as ImageIcon } from 'lucide-react';
 import { processReceiptImage } from '../utils/ocrProcessor';
 import { ReceiptItem } from '../App';
 import { Progress } from './ui/progress';
+import heic2any from 'heic2any';
 
 interface ImageUploaderProps {
   onItemsExtracted: (items: ReceiptItem[]) => void;
@@ -21,11 +22,27 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
     if (!file) return;
 
     // Show preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    if (file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+      try {
+        const convertedBlob = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.7
+        });
+
+        const blobToUse = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+        const url = URL.createObjectURL(blobToUse);
+        setPreview(url);
+      } catch (err) {
+        console.error("Error generating HEIC preview:", err);
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
 
     // Process image
     setIsProcessing(true);

@@ -39,6 +39,7 @@
             "dotenv": "^17.2.3",
             "embla-carousel-react": "^8.6.0",
             "express": "^5.2.1",
+            "heic2any": "^0.0.4",
             "input-otp": "^1.4.2",
             "lucide-react": "^0.487.0",
             "mongoose": "^8.21.0",
