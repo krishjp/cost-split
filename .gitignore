@@ -13,6 +13,7 @@ dist/
 # Backend Data
 sessions.json
 *sessions.json
+server/list_models.py
 
 # Documentation
 DEPLOYMENT.md

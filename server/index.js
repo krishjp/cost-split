@@ -9,6 +9,23 @@ import { Session } from './models/Session.js';
 
 dotenv.config();
 
+import multer from 'multer';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Configure multer for temporary file storage
+const upload = multer({ dest: 'uploads/' });
+
+// Ensure uploads directory exists
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -123,8 +140,7 @@ io.on('connection', (socket) => {
 
             await session.save();
 
-            // Broadcast to everyone else in the room
-            // We send back the plain object
+            // Broadcast to everyone else in the room and send back the plain object
             const sessionData = {
                 id: session.sessionId,
                 items: session.items,
@@ -142,6 +158,52 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
+    });
+});
+
+app.post('/api/parse-receipt', upload.single('receipt'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No receipt image uploaded' });
+    }
+
+    const imagePath = req.file.path;
+    const scriptPath = path.join(__dirname, 'receipt_parser.py');
+    const pythonPath = 'python3';
+
+    console.log(`Processing receipt: ${imagePath} using ${pythonPath}`);
+
+    const pythonProcess = spawn(pythonPath, [scriptPath, imagePath]);
+
+    let dataString = '';
+    let errorString = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+        dataString += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+        errorString += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+        // Clean up uploaded file
+        fs.unlink(imagePath, (err) => {
+            if (err) console.error('Error deleting temp file:', err);
+        });
+
+        if (code !== 0) {
+            console.error(`Python script exited with code ${code}`);
+            console.error(`Python stderr: ${errorString}`);
+            return res.status(500).json({ error: 'Failed to parse receipt', details: errorString });
+        }
+
+        try {
+            const items = JSON.parse(dataString);
+            res.json(items);
+        } catch (e) {
+            console.error('Failed to parse Python output:', dataString);
+            res.status(500).json({ error: 'Invalid response from parser' });
+        }
     });
 });
 
