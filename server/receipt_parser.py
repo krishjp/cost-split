@@ -40,7 +40,8 @@ def parse_receipt(image_path):
         
         Extraction Rules:
         - name: string (The item description. Include modifiers/add-ons like "Add Chicken" in parentheses).
-        - price: number (The final price for this line item. If there are add-on costs involved, sum them up mentally if they aren't separate line items. If the receipt lists "Small Ramen ... 15.00", the price is 15.00).
+        - price: number (The UNIT PRICE for a single item. If the receipt shows a total line price for multiple items, DIVIDE the total by the quantity to get the unit price. e.g., if "2 Ramen ... 30.00", the price should be 15.00). 
+            If there are add-on costs involved, sum them up mentally if they aren't separate line items.
         - quantity: number (Look for a leading number like "2 Ramen". Default to 1).
         
         Structure:
@@ -48,18 +49,18 @@ def parse_receipt(image_path):
         
         Example expected behavior:
         Receipt:
-        "1 Sm Ramen   15.00"
+        "3 Sm Ramen   45.00"
         "  * Chicken"
         "  * #3"
         "1 R Ramen    17.00"
         "  * Tofu"
         "  * #3"
-        "Subtotal     32.00"
+        "Subtotal     62.00"
         
         Output:
         [
-            {"name": "Sm Ramen (Chicken, #3)", "price": 15.00, "quantity": 1},
-            {"name": "R Ramen", "price": 17.00, "quantity": 1}
+            {"name": "Sm Ramen (Chicken)", "price": 15.00, "quantity": 3},
+            {"name": "R Ramen (Tofu)", "price": 17.00, "quantity": 1}
         ]
         """
         
