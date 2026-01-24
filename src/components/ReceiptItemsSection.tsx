@@ -174,9 +174,9 @@ export function ReceiptItemsSection({
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: index * 0.05 }}
-              className="relative group"
+              className="relative group w-full md:w-auto"
             >
-              <div className="bg-card rounded-xl shadow-sm border border-border hover:border-primary/50 transition-all p-4 pr-10 min-w-[220px]">
+              <div className="bg-card rounded-xl shadow-sm border border-border hover:border-primary/50 transition-all p-4 pr-10 w-full md:w-auto md:min-w-[220px]">
                 {editingId === item.id ? (
                   <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                     <Input
@@ -221,7 +221,7 @@ export function ReceiptItemsSection({
                             variant="ghost"
                             size="icon"
                             onClick={() => startEdit(item)}
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-6 w-6 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                           >
                             <Edit2 className="w-3 h-3 text-muted-foreground" />
                           </Button>
@@ -270,7 +270,7 @@ export function ReceiptItemsSection({
                 {isAdmin && (
                   <button
                     onClick={() => onRemoveItem(item.id)}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center hover:bg-destructive/90 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center hover:bg-destructive/90 transition-colors shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100"
                   >
                     <X className="w-3 h-3" />
                   </button>
