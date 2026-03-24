@@ -109,28 +109,31 @@ export default function App() {
     return false;
   };
 
-  // normalize items to ensure backward compatibility
   const normalizeItems = (items: any[]): ReceiptItem[] => {
     return items.map(item => {
       const quantity = item.quantity || 1;
       let assignedTo = item.assignedTo;
 
-      if (Array.isArray(assignedTo) && (assignedTo.length === 0 || typeof assignedTo[0] === 'string')) {
+      // Ensure assignedTo is a 2D array: [unitIndex][guestIds]
+      if (!Array.isArray(assignedTo)) {
+        assignedTo = Array.from({ length: quantity }, () => []);
+      } else if (assignedTo.length === 0 || (assignedTo.length > 0 && typeof assignedTo[0] === 'string')) {
+        // Handle legacy format where assignedTo was just a 1D array of strings
         assignedTo = [assignedTo];
       }
 
-      if (!Array.isArray(assignedTo)) {
-        assignedTo = [];
-      }
-
-      while (assignedTo.length < quantity) {
-        assignedTo.push([]);
+      // Ensure we have exactly 'quantity' number of arrays, and each is a unique instance
+      const normalizedAssignedTo: string[][] = [];
+      for (let i = 0; i < quantity; i++) {
+        const current = assignedTo[i];
+        normalizedAssignedTo.push(Array.isArray(current) ? [...current] : []);
       }
 
       return {
         ...item,
+        id: item.id || `item-${Math.random().toString(36).substring(2, 11)}-${Date.now()}`,
         quantity,
-        assignedTo: assignedTo as string[][]
+        assignedTo: normalizedAssignedTo
       };
     });
   };

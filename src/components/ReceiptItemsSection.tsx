@@ -51,7 +51,7 @@ export function ReceiptItemsSection({
           name: newItemName.trim(),
           price,
           quantity,
-          assignedTo: Array(quantity).fill([])
+          assignedTo: Array.from({ length: quantity }, () => [])
         });
         setNewItemName('');
         setNewItemPrice('');
