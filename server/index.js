@@ -7,19 +7,51 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { Session } from './models/Session.js';
 
-dotenv.config();
-
 import multer from 'multer';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import MongoStore from 'connect-mongo';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const JWT_SECRET = process.env.JWT_SECRET || 'your-default-secure-secret-key-change-this';
+
+// Configure helmet for security headers
+const helmetConfig = helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "ws:", "wss:"],
+        },
+    },
+});
+
 // Configure multer for temporary file storage
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|webp|heic/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        if (extname && mimetype) {
+            return cb(null, true);
+        }
+        cb(new Error('Only images are allowed'));
+    }
+});
 
 // Ensure uploads directory exists
 if (!fs.existsSync('uploads')) {
@@ -27,14 +59,52 @@ if (!fs.existsSync('uploads')) {
 }
 
 const app = express();
-app.use(cors());
+
+// Security Middleware
+app.use(helmetConfig);
+app.use(cookieParser());
 app.use(express.json());
+app.use(cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+}));
+
+// Session Configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'another-secure-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: MONGO_URI }),
+    cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+    }
+}));
+
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ error: 'Unauthorized: No token provided' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Forbidden: Invalid token' });
+        req.user = user;
+        next();
+    });
+};
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: process.env.CLIENT_URL || "http://localhost:3000",
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
@@ -44,12 +114,12 @@ mongoose.connect(MONGO_URI)
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB connection error:', err));
 
+
 // API Endpoints
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
 });
-
 
 // Create a new session
 app.post('/api/create-session', async (req, res) => {
@@ -84,7 +154,9 @@ app.post('/api/verify-pin', async (req, res) => {
         }
 
         if (session.adminPin === pin) {
-            res.json({ success: true });
+            // Generate a token that expires in 24 hours
+            const token = jwt.sign({ sessionId }, JWT_SECRET, { expiresIn: '24h' });
+            res.json({ success: true, token });
         } else {
             res.status(401).json({ error: 'Invalid PIN' });
         }
@@ -95,9 +167,15 @@ app.post('/api/verify-pin', async (req, res) => {
 });
 
 
-// Get session data
-app.get('/api/session/:id', async (req, res) => {
+// Get session data - Protected by JWT and sessionId check
+app.get('/api/session/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
+
+    // IDOR protection: Ensure the token belongs to the requested session
+    if (req.user.sessionId !== id) {
+        return res.status(403).json({ error: 'Forbidden: Access to other sessions is denied' });
+    }
+
     try {
         const session = await Session.findOne({ sessionId: id });
         if (!session) {
@@ -121,26 +199,35 @@ io.on('connection', (socket) => {
 
     socket.on('update-session', async ({ sessionId, data }) => {
         try {
-            // Check if session exists, if not create it (upsert-like behavior for safety)
-            let session = await Session.findOne({ sessionId });
+            const session = await Session.findOne({ sessionId });
 
             if (!session) {
-                console.log(`Session ${sessionId} not found in DB. Creating new entry.`);
-                session = new Session({ sessionId });
+                console.log(`Session ${sessionId} not found in DB.`);
+                return;
             }
 
-            // Update fields
-            if (data.items) session.items = data.items;
-            if (data.guests) {
-                session.guests = data.guests;
+            if (Array.isArray(data.items)) {
+                session.items = data.items.map(item => ({
+                    name: String(item.name || ''),
+                    price: Number(item.price || 0),
+                    quantity: Number(item.quantity || 1)
+                }));
+            }
+
+            if (Array.isArray(data.guests)) {
+                session.guests = data.guests.map(guest => ({
+                    name: String(guest.name || ''),
+                    selections: Array.isArray(guest.selections) ? guest.selections.map(Number) : []
+                }));
                 session.markModified('guests');
             }
-            if (data.tax !== undefined) session.tax = data.tax;
-            if (data.tip !== undefined) session.tip = data.tip;
+
+            if (data.tax !== undefined) session.tax = Number(data.tax);
+            if (data.tip !== undefined) session.tip = Number(data.tip);
 
             await session.save();
 
-            // Broadcast to everyone else in the room and send back the plain object
+            // Broadcast to everyone else in the room
             const sessionData = {
                 id: session.sessionId,
                 items: session.items,
@@ -167,11 +254,18 @@ app.post('/api/parse-receipt', upload.single('receipt'), async (req, res) => {
     }
 
     const imagePath = req.file.path;
+    const resolvedPath = path.resolve(imagePath);
+    const uploadsDir = path.resolve(__dirname, '../uploads');
+    if (imagePath.includes('..') || !imagePath.startsWith('uploads')) {
+        return res.status(403).json({ error: 'Project security prohibits this path' });
+    }
+
     const scriptPath = path.join(__dirname, 'receipt_parser.py');
     const pythonPath = 'python3';
 
     console.log(`Processing receipt: ${imagePath} using ${pythonPath}`);
 
+    // Standard fork for isolation
     const pythonProcess = spawn(pythonPath, [scriptPath, imagePath]);
 
     let dataString = '';
