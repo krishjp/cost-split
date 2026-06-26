@@ -26,11 +26,7 @@ genai.configure(api_key=api_key)
 
 def parse_receipt(image_path):
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        img = Image.open(image_path)
-        
-        prompt = """
+        system_instruction = """
         You are a generic receipt parser. Your goal is to extract a list of purchased items from the image.
         
         CRITICAL RULES FOR PRICING:
@@ -44,36 +40,26 @@ def parse_receipt(image_path):
             If there are add-on costs involved, sum them up mentally if they aren't separate line items.
         - quantity: number (Look for a leading number like "2 Ramen". Default to 1).
         
-        Structure:
-        Return ONLY a raw JSON array. No markdown.
-        
-        Example expected behavior:
-        Receipt:
-        "3 Sm Ramen   45.00"
-        "  * Chicken"
-        "  * #3"
-        "1 R Ramen    17.00"
-        "  * Tofu"
-        "  * #3"
-        "Subtotal     62.00"
-        
-        Output:
+        You must return a raw JSON array matching this format:
         [
-            {"name": "Sm Ramen (Chicken)", "price": 15.00, "quantity": 3},
-            {"name": "R Ramen (Tofu)", "price": 17.00, "quantity": 1}
+            {"name": "Item Name", "price": 10.50, "quantity": 1}
         ]
         """
         
-        response = model.generate_content([prompt, img])
+        generation_config = {
+            "response_mime_type": "application/json"
+        }
         
-        # Clean response text just in case model adds backticks
+        model = genai.GenerativeModel(
+            model_name='gemini-2.5-flash',
+            system_instruction=system_instruction,
+            generation_config=generation_config
+        )
+        
+        img = Image.open(image_path)
+        
+        response = model.generate_content(img)
         text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
             
         # Validate JSON
         items = json.loads(text)

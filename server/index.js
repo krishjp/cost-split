@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import mongoSanitize from 'express-mongo-sanitize';
 import { Session } from './models/Session.js';
 
 dotenv.config();
@@ -30,6 +31,7 @@ if (!fs.existsSync('uploads')) {
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(mongoSanitize());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -76,10 +78,11 @@ app.post('/api/create-session', async (req, res) => {
     }
 });
 
+// Verify a PIN
 app.post('/api/verify-pin', async (req, res) => {
     const { sessionId, pin } = req.body;
     try {
-        const session = await Session.findOne({ sessionId });
+        const session = await Session.findOne({ sessionId: String(sessionId) });
         if (!session) {
             return res.status(404).json({ error: 'Session not found' });
         }
@@ -100,7 +103,7 @@ app.post('/api/verify-pin', async (req, res) => {
 app.get('/api/session/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const session = await Session.findOne({ sessionId: id });
+        const session = await Session.findOne({ sessionId: String(id) });
         if (!session) {
             return res.status(404).json({ error: 'Session not found' });
         }
@@ -116,18 +119,19 @@ io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
     socket.on('join-session', (sessionId) => {
-        socket.join(sessionId);
+        socket.join(String(sessionId));
         console.log(`Socket ${socket.id} joined session ${sessionId}`);
     });
 
     socket.on('update-session', async ({ sessionId, data }) => {
         try {
+            const safeSessionId = String(sessionId);
             // Check if session exists, if not create it (upsert-like behavior for safety)
-            let session = await Session.findOne({ sessionId });
+            let session = await Session.findOne({ sessionId: safeSessionId });
 
             if (!session) {
-                console.log(`Session ${sessionId} not found in DB. Creating new entry.`);
-                session = new Session({ sessionId });
+                console.log(`Session ${safeSessionId} not found in DB. Creating new entry.`);
+                session = new Session({ sessionId: safeSessionId });
             }
 
             // Update fields
@@ -151,7 +155,7 @@ io.on('connection', (socket) => {
                 createdAt: session.createdAt
             };
 
-            socket.to(sessionId).emit('session-updated', sessionData);
+            socket.to(safeSessionId).emit('session-updated', sessionData);
         } catch (err) {
             console.error("Error updating session:", err);
         }
