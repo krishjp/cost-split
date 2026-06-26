@@ -5,6 +5,7 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { Session } from './models/Session.js';
 
 dotenv.config();
@@ -161,7 +162,16 @@ io.on('connection', (socket) => {
     });
 });
 
-app.post('/api/parse-receipt', upload.single('receipt'), async (req, res) => {
+// Rate limiting specifically for receipt parsing to protect Gemini API free tier (15 RPM global limit)
+const receiptParseLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 5, // Limit each IP to 5 requests per minute
+    message: { error: 'Too many receipt uploads from this IP. Please try again in a minute.' },
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+app.post('/api/parse-receipt', receiptParseLimiter, upload.single('receipt'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No receipt image uploaded' });
     }

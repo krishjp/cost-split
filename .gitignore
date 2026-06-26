@@ -20,3 +20,6 @@ DEPLOYMENT.md
 
 # System Files
 .DS_Store
+
+# CodeGraph
+.codegraph/

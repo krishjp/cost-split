@@ -5,6 +5,7 @@ import { processReceiptImage } from '../utils/ocrProcessor';
 import { ReceiptItem } from '../App';
 import { Progress } from './ui/progress';
 import heic2any from 'heic2any';
+import { toast } from 'sonner';
 
 interface ImageUploaderProps {
   onItemsExtracted: (items: ReceiptItem[]) => void;
@@ -54,9 +55,11 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
       });
       onItemsExtracted(items);
       setProgress(100);
+      toast.success("Receipt parsed successfully!");
     } catch (error) {
       console.error('Error processing image:', error);
-      alert('Failed to process receipt. Please try again.');
+      const errMsg = error instanceof Error ? error.message : 'Failed to parse receipt. Please try again.';
+      toast.error(errMsg);
     } finally {
       setTimeout(() => {
         setIsProcessing(false);
