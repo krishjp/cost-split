@@ -31,7 +31,12 @@ if (!fs.existsSync('uploads')) {
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(mongoSanitize());
+app.use((req, res, next) => {
+    if (req.body) mongoSanitize.sanitize(req.body);
+    if (req.params) mongoSanitize.sanitize(req.params);
+    if (req.query) mongoSanitize.sanitize(req.query);
+    next();
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
