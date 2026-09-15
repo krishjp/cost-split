@@ -13,6 +13,7 @@ import { Receipt, Users, Calculator, Link as LinkIcon, Share2, LogOut } from 'lu
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import { Loader2, ServerCrash } from 'lucide-react';
+import { Charges, DEFAULT_CHARGES } from './utils/split';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -31,16 +32,31 @@ export interface Guest {
   paidAmount: number;
 }
 
+interface SessionData extends Partial<Charges> {
+  items?: any[];
+  guests?: Guest[];
+}
+
+interface ActionResult {
+  ok: boolean;
+  error?: string;
+  session?: SessionData;
+}
+
+const adminTokenKey = (sid: string) => `cost-splitting-admin-${sid}`;
+// Older builds cached the raw PIN; it is exchanged for a token on next load.
+const legacyPinKey = (sid: string) => `cost-splitting-pin-${sid}`;
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([]);
   const [guests, setGuests] = useState<Guest[]>([]);
-  const [taxPercentage, setTaxPercentage] = useState(0);
-  const [tipPercentage, setTipPercentage] = useState(0);
+  const [charges, setCharges] = useState<Charges>(DEFAULT_CHARGES);
   const [isProcessing, setIsProcessing] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isGuestView, setIsGuestView] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const isAdmin = adminToken !== null;
   const [serverStatus, setServerStatus] = useState<'checking' | 'awake' | 'down'>('checking');
 
   // Check Server Health
@@ -77,36 +93,66 @@ export default function App() {
 
     if (sid) {
       setSessionId(sid);
-      // Check for persisted Admin rights (optional, maybe clear on close?)
-      // For PIN based, we probably want to persist it for convenience on same device
-      const storedPin = localStorage.getItem(`cost-splitting-pin-${sid}`);
-      if (storedPin) {
-        verifyPin(sid, storedPin).then(success => {
-          if (success) {
-            setIsAdmin(true);
-            setIsGuestView(false);
-          }
-        });
-      }
+      restoreAdmin(sid);
       connectSocket(sid);
     }
     // Removed auto createSession
   }, [serverStatus]);
 
-  const verifyPin = async (sid: string, pin: string): Promise<boolean> => {
+  // Restore admin mode on this device from a cached admin token
+  const restoreAdmin = async (sid: string) => {
+    let token = localStorage.getItem(adminTokenKey(sid));
+    const legacyPin = localStorage.getItem(legacyPinKey(sid));
+    localStorage.removeItem(legacyPinKey(sid));
+
+    if (!token && legacyPin) {
+      token = await verifyPin(sid, legacyPin);
+    } else if (token && !(await verifyAdminToken(sid, token))) {
+      token = null;
+    }
+
+    if (token) {
+      localStorage.setItem(adminTokenKey(sid), token);
+      setAdminToken(token);
+      setIsGuestView(false);
+    } else {
+      localStorage.removeItem(adminTokenKey(sid));
+    }
+  };
+
+  // Returns the session's admin token if the PIN is correct
+  const verifyPin = async (sid: string, pin: string): Promise<string | null> => {
     try {
       const res = await fetch(`${API_URL}/api/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: sid, pin })
       });
-      if (res.ok) {
-        return true;
+      const data = await res.json();
+      if (res.ok && data.token) {
+        return data.token;
+      }
+      if (res.status === 429 && data.error) {
+        toast.error(data.error);
       }
     } catch (err) {
       console.error("Verify PIN failed", err);
     }
-    return false;
+    return null;
+  };
+
+  const verifyAdminToken = async (sid: string, token: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/api/verify-admin-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid, token })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error("Verify admin token failed", err);
+      return false;
+    }
   };
 
   // normalize items to ensure backward compatibility
@@ -147,23 +193,34 @@ export default function App() {
     // Initial data fetch
     fetch(`${API_URL}/api/session/${sid}`)
       .then(res => res.json())
-      .then(data => {
-        if (data.items) setReceiptItems(normalizeItems(data.items));
-        if (data.guests) setGuests(data.guests);
-        if (data.tax !== undefined) setTaxPercentage(data.tax);
-        if (data.tip !== undefined) setTipPercentage(data.tip);
-      })
+      .then(applySessionData)
       .catch(err => console.error("Failed to load session", err));
 
     newSocket.on('session-updated', (data) => {
       console.log('Session updated:', data);
-      if (data.items) setReceiptItems(normalizeItems(data.items));
-      if (data.guests) setGuests(data.guests);
-      if (data.tax !== undefined) setTaxPercentage(data.tax);
-      if (data.tip !== undefined) setTipPercentage(data.tip);
+      applySessionData(data);
     });
 
     return () => newSocket.close();
+  };
+
+  const applySessionData = (data: SessionData) => {
+    if (data.items) setReceiptItems(normalizeItems(data.items));
+    if (data.guests) setGuests(data.guests);
+    setCharges(prev => ({
+      tax: data.tax ?? prev.tax,
+      tip: data.tip ?? prev.tip,
+      taxMode: data.taxMode ?? prev.taxMode,
+      tipMode: data.tipMode ?? prev.tipMode,
+    }));
+  };
+
+  // The server rejects invalid or unauthorized changes and sends back its current
+  // state, which replaces the optimistic local update.
+  const handleActionResult = (result: ActionResult) => {
+    if (result.ok) return;
+    toast.error(result.error || "Update failed");
+    if (result.session) applySessionData(result.session);
   };
 
   const createSession = async (pin: string) => {
@@ -175,13 +232,14 @@ export default function App() {
         body: JSON.stringify({ pin })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       const sid = data.sessionId;
       setSessionId(sid);
-      setIsAdmin(true);
+      setAdminToken(data.token);
       setIsGuestView(false);
 
-      // Persist pin for this user
-      localStorage.setItem(`cost-splitting-pin-${sid}`, pin);
+      // Keep admin access on this device
+      localStorage.setItem(adminTokenKey(sid), data.token);
 
       const url = new URL(window.location.href);
       url.searchParams.set('session', sid);
@@ -199,11 +257,11 @@ export default function App() {
 
   const handleAdminLogin = async (pin: string) => {
     if (!sessionId) return false;
-    const success = await verifyPin(sessionId, pin);
-    if (success) {
-      setIsAdmin(true);
+    const token = await verifyPin(sessionId, pin);
+    if (token) {
+      setAdminToken(token);
       setIsGuestView(false);
-      localStorage.setItem(`cost-splitting-pin-${sessionId}`, pin);
+      localStorage.setItem(adminTokenKey(sessionId), token);
       toast.success("Admin Access Granted");
       return true;
     }
@@ -211,23 +269,23 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setIsAdmin(false);
+    setAdminToken(null);
     setIsGuestView(true);
     if (sessionId) {
-      localStorage.removeItem(`cost-splitting-pin-${sessionId}`);
+      localStorage.removeItem(adminTokenKey(sessionId));
     }
     toast.info("Logged out of Admin mode");
   }
 
-  const syncUpdate = (data: { items?: ReceiptItem[], guests?: Guest[], tax?: number, tip?: number }) => {
+  // Admin-only changes; the server verifies the token before applying them
+  const syncUpdate = (data: { items?: ReceiptItem[], guests?: Guest[] } & Partial<Charges>) => {
     if (!socket || !sessionId) return;
-    socket.emit('update-session', { sessionId, data });
+    socket.emit('update-session', { sessionId, token: adminToken, data }, handleActionResult);
   };
 
-  const handleUpdateTaxTip = (tax: number, tip: number) => {
-    setTaxPercentage(tax);
-    setTipPercentage(tip);
-    syncUpdate({ tax, tip });
+  const handleUpdateCharges = (update: Partial<Charges>) => {
+    setCharges(prev => ({ ...prev, ...update }));
+    syncUpdate(update);
   };
 
   // HANDLERS
@@ -259,7 +317,11 @@ export default function App() {
     syncUpdate({ guests: newGuests, items: newItems });
   };
 
+  // Anyone with the link can claim items, so this uses its own event rather than an admin update
   const handleToggleAssignment = (itemId: string, guestId: string, unitIndex: number = 0) => {
+    const targetItem = receiptItems.find(item => item.id === itemId);
+    const assigned = !(targetItem?.assignedTo[unitIndex] || []).includes(guestId);
+
     const newItems = receiptItems.map(item => {
       if (item.id === itemId) {
         // Ensure assignedTo has enough arrays for the quantity
@@ -270,11 +332,10 @@ export default function App() {
         }
 
         const unitAssignments = currentAssignedTo[unitIndex] || [];
-        const isAssigned = unitAssignments.includes(guestId);
 
-        const newUnitAssignments = isAssigned
-          ? unitAssignments.filter(id => id !== guestId)
-          : [...unitAssignments, guestId];
+        const newUnitAssignments = assigned
+          ? [...unitAssignments, guestId]
+          : unitAssignments.filter(id => id !== guestId);
 
         currentAssignedTo[unitIndex] = newUnitAssignments;
 
@@ -286,7 +347,9 @@ export default function App() {
       return item;
     });
     setReceiptItems(newItems);
-    syncUpdate({ items: newItems });
+    if (socket && sessionId) {
+      socket.emit('toggle-assignment', { sessionId, itemId, guestId, unitIndex, assigned }, handleActionResult);
+    }
   };
 
   const handleRemoveItem = (itemId: string) => {
@@ -410,13 +473,12 @@ export default function App() {
             items={receiptItems}
             guests={guests}
             onToggleAssignment={handleToggleAssignment}
-            taxPercentage={taxPercentage}
-            tipPercentage={tipPercentage}
+            charges={charges}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Upload Section */}
-            {isAdmin && (
+            {adminToken && sessionId && (
               <Card className="lg:col-span-3 p-6 bg-card border-2 border-dashed border-border shadow-sm">
                 <div className="flex flex-col items-center">
                   <p className="text-sm text-muted-foreground mb-4">Start by adding items manually below, or upload a receipt image.</p>
@@ -424,6 +486,7 @@ export default function App() {
                     onItemsExtracted={handleItemsExtracted}
                     isProcessing={isProcessing}
                     setIsProcessing={setIsProcessing}
+                    admin={{ sessionId, token: adminToken }}
                   />
                 </div>
               </Card>
@@ -482,9 +545,8 @@ export default function App() {
                 <SplitSummary
                   items={receiptItems}
                   guests={guests}
-                  taxPercentage={taxPercentage}
-                  tipPercentage={tipPercentage}
-                  onUpdateTaxTip={handleUpdateTaxTip}
+                  charges={charges}
+                  onUpdateCharges={handleUpdateCharges}
                   isAdmin={isAdmin}
                   onUpdatePayment={handleUpdatePayment}
                 />

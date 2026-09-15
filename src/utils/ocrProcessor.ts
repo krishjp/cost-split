@@ -2,8 +2,14 @@ import { ReceiptItem } from '../App';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+export interface AdminCredentials {
+  sessionId: string;
+  token: string;
+}
+
 export async function processReceiptImage(
   file: File,
+  admin: AdminCredentials,
   onProgress?: (progress: number) => void
 ): Promise<ReceiptItem[]> {
   const formData = new FormData();
@@ -13,6 +19,10 @@ export async function processReceiptImage(
 
   const response = await fetch(`${API_URL}/api/parse-receipt`, {
     method: 'POST',
+    headers: {
+      'X-Session-Id': admin.sessionId,
+      'X-Admin-Token': admin.token,
+    },
     body: formData,
   });
 

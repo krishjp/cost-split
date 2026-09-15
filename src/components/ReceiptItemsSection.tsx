@@ -137,6 +137,7 @@ export function ReceiptItemsSection({
               placeholder="Item Name"
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
+              maxLength={200}
               className="flex-grow"
             />
             <Input
@@ -182,6 +183,7 @@ export function ReceiptItemsSection({
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
+                      maxLength={200}
                       className="h-8 text-sm"
                       placeholder="Item name"
                     />

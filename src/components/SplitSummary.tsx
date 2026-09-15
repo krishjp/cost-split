@@ -4,14 +4,25 @@ import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { cn } from '../utils';
+import {
+  Charges,
+  ChargeMode,
+  MAX_PERCENT,
+  calculateBillTotals,
+  calculateGuestTotals,
+  chargeAmount,
+  convertCharge,
+  formatCharge,
+} from '../utils/split';
 
 
 interface SplitSummaryProps {
   items: ReceiptItem[];
   guests: Guest[];
-  taxPercentage: number;
-  tipPercentage: number;
-  onUpdateTaxTip: (tax: number, tip: number) => void;
+  charges: Charges;
+  onUpdateCharges: (update: Partial<Charges>) => void;
   isAdmin: boolean;
   onUpdatePayment: (guestId: string, amount: number) => void;
 }
@@ -19,34 +30,16 @@ interface SplitSummaryProps {
 export function SplitSummary({
   items,
   guests,
-  taxPercentage,
-  tipPercentage,
-  onUpdateTaxTip,
+  charges,
+  onUpdateCharges,
   isAdmin,
   onUpdatePayment
 }: SplitSummaryProps) {
 
-  // Calculate raw subtotal for a guest (items only)
-  const calculateGuestSubtotal = (guestId: string): number => {
-    return items.reduce((total, item) => {
-      let itemTotalForGuest = 0;
-      // Iterate through each unit of quantity
-      for (let i = 0; i < item.quantity; i++) {
-        const unitAssignments = item.assignedTo[i] || [];
-        if (unitAssignments.includes(guestId) && unitAssignments.length > 0) {
-          itemTotalForGuest += (item.price / unitAssignments.length);
-        }
-      }
-      return total + itemTotalForGuest;
-    }, 0);
-  };
+  const { subtotal, tax: taxAmount, tip: tipAmount, total: totalAmount } = calculateBillTotals(items, charges);
 
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-  // Calculate Tax and Tip amounts based on percentages
-  const taxAmount = subtotal * (taxPercentage / 100);
-  const tipAmount = subtotal * (tipPercentage / 100);
-  const totalAmount = subtotal + taxAmount + tipAmount;
+  const chargeRowLabel = (label: string, value: number, mode: ChargeMode) =>
+    mode === 'percent' ? `${label} (${formatCharge(value, mode)})` : label;
 
   const assignedSubtotal = items.reduce((sum, item) => {
     let itemAssignedValue = 0;
@@ -72,35 +65,23 @@ export function SplitSummary({
   return (
     <div className="space-y-6">
       {/* Tax and Tip Inputs */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Tax (%)</Label>
-          <div className="relative">
-            <Input
-              type="number"
-              min="0"
-              step="0.1"
-              value={taxPercentage}
-              onChange={(e) => onUpdateTaxTip(parseFloat(e.target.value) || 0, tipPercentage)}
-              className="h-8 text-right pr-6"
-            />
-            <span className="absolute right-2 top-2 text-xs text-muted-foreground">%</span>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Tip (%)</Label>
-          <div className="relative">
-            <Input
-              type="number"
-              min="0"
-              step="0.1"
-              value={tipPercentage}
-              onChange={(e) => onUpdateTaxTip(taxPercentage, parseFloat(e.target.value) || 0)}
-              className="h-8 text-right pr-6"
-            />
-            <span className="absolute right-2 top-2 text-xs text-muted-foreground">%</span>
-          </div>
-        </div>
+      <div className="space-y-3">
+        <ChargeField
+          label="Tax"
+          value={charges.tax}
+          mode={charges.taxMode}
+          subtotal={subtotal}
+          disabled={!isAdmin}
+          onChange={(tax, taxMode) => onUpdateCharges({ tax, taxMode })}
+        />
+        <ChargeField
+          label="Tip"
+          value={charges.tip}
+          mode={charges.tipMode}
+          subtotal={subtotal}
+          disabled={!isAdmin}
+          onChange={(tip, tipMode) => onUpdateCharges({ tip, tipMode })}
+        />
       </div>
 
       <div className="space-y-2 bg-muted/30 p-3 rounded-lg border border-border/50">
@@ -109,11 +90,11 @@ export function SplitSummary({
           <span>${subtotal.toFixed(2)}</span>
         </div>
         <div className="flex justify-between items-center text-sm">
-          <span className="text-muted-foreground">Tax ({taxPercentage}%)</span>
+          <span className="text-muted-foreground">{chargeRowLabel('Tax', charges.tax, charges.taxMode)}</span>
           <span>${taxAmount.toFixed(2)}</span>
         </div>
         <div className="flex justify-between items-center text-sm">
-          <span className="text-muted-foreground">Tip ({tipPercentage}%)</span>
+          <span className="text-muted-foreground">{chargeRowLabel('Tip', charges.tip, charges.tipMode)}</span>
           <span>${tipAmount.toFixed(2)}</span>
         </div>
         <Separator className="my-2" />
@@ -133,12 +114,7 @@ export function SplitSummary({
         <div className="space-y-3">
           <h3 className="text-sm font-medium text-foreground">Per Person Breakdown</h3>
           {guests.map((guest) => {
-            const guestSubtotal = calculateGuestSubtotal(guest.id);
-            // Pro-rated tax and tip based on their share of the subtotal
-            const ratio = subtotal > 0 ? (guestSubtotal / subtotal) : 0;
-            const guestTax = taxAmount * ratio;
-            const guestTip = tipAmount * ratio;
-            const guestTotal = guestSubtotal + guestTax + guestTip;
+            const guestTotal = calculateGuestTotals(items, guest.id, charges).total;
             const paidAmount = guest.paidAmount || 0;
             const remaining = guestTotal - paidAmount;
 
@@ -194,6 +170,88 @@ export function SplitSummary({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+interface ChargeFieldProps {
+  label: string;
+  value: number;
+  mode: ChargeMode;
+  subtotal: number;
+  disabled: boolean;
+  onChange: (value: number, mode: ChargeMode) => void;
+}
+
+// Tax/tip input with a %/$ toggle. Sized to 44px on mobile so the toggle is easy to tap.
+function ChargeField({ label, value, mode, subtotal, disabled, onChange }: ChargeFieldProps) {
+  const [localValue, setLocalValue] = useState(value.toString());
+
+  useEffect(() => {
+    setLocalValue(value.toString());
+  }, [value, mode]);
+
+  const commit = () => {
+    const num = parseFloat(localValue);
+    if (isNaN(num)) {
+      setLocalValue(value.toString());
+      return;
+    }
+    const clamped = Math.max(0, mode === 'percent' ? Math.min(num, MAX_PERCENT) : num);
+    setLocalValue(clamped.toString());
+    if (clamped !== value) onChange(clamped, mode);
+  };
+
+  const switchMode = (next: string) => {
+    if ((next !== 'percent' && next !== 'amount') || next === mode) return;
+    // Convert so the bill total stays the same after switching
+    onChange(convertCharge(value, mode, subtotal), next);
+  };
+
+  const hint = mode === 'percent'
+    ? `= $${chargeAmount(value, mode, subtotal).toFixed(2)}`
+    : subtotal > 0 ? `≈ ${((value / subtotal) * 100).toFixed(1)}% of subtotal` : null;
+
+  const toggleItemClass = "h-11 min-w-11 md:h-9 md:min-w-9 text-sm font-medium data-[state=on]:bg-primary data-[state=on]:text-primary-foreground";
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Label className="w-8 shrink-0 text-sm text-muted-foreground">{label}</Label>
+        <div className="relative flex-1 min-w-0">
+          {mode === 'amount' && (
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+          )}
+          <Input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            max={mode === 'percent' ? MAX_PERCENT : undefined}
+            step={mode === 'percent' ? '0.1' : '0.01'}
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+            disabled={disabled}
+            aria-label={`${label} ${mode === 'percent' ? 'percentage' : 'dollar amount'}`}
+            className={cn("h-11 md:h-9 text-right", mode === 'amount' && "pl-6")}
+          />
+        </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={mode}
+          onValueChange={switchMode}
+          disabled={disabled}
+          aria-label={`${label} type`}
+        >
+          <ToggleGroupItem value="percent" aria-label="Percentage" className={toggleItemClass}>%</ToggleGroupItem>
+          <ToggleGroupItem value="amount" aria-label="Dollar amount" className={toggleItemClass}>$</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+      {hint && <p className="text-[11px] text-muted-foreground pl-10">{hint}</p>}
     </div>
   );
 }
