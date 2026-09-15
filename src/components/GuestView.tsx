@@ -7,35 +7,27 @@ import { Check, User, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../utils';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
+import { Charges, ChargeMode, calculateGuestTotals, formatCharge } from '../utils/split';
 
 interface GuestViewProps {
     items: ReceiptItem[];
     guests: Guest[];
     onToggleAssignment: (itemId: string, guestId: string, unitIndex: number) => void;
-    taxPercentage: number;
-    tipPercentage: number;
+    charges: Charges;
 }
 
-export function GuestView({ items, guests, onToggleAssignment, taxPercentage, tipPercentage }: GuestViewProps) {
+export function GuestView({ items, guests, onToggleAssignment, charges }: GuestViewProps) {
     const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
 
-    const myTotal = useMemo(() => {
-        if (!selectedGuestId) return 0;
-        const subtotal = items.reduce((acc, item) => {
-            let itemTotal = 0;
-            for (let i = 0; i < item.quantity; i++) {
-                const unitAssignments = item.assignedTo[i] || [];
-                if (unitAssignments.includes(selectedGuestId)) {
-                    itemTotal += (item.price / unitAssignments.length);
-                }
-            }
-            return acc + itemTotal;
-        }, 0);
+    const myTotals = useMemo(
+        () => selectedGuestId ? calculateGuestTotals(items, selectedGuestId, charges) : null,
+        [items, selectedGuestId, charges]
+    );
+    const myTotal = myTotals?.total ?? 0;
 
-        const taxAmount = subtotal * (taxPercentage / 100);
-        const tipAmount = subtotal * (tipPercentage / 100);
-        return subtotal + taxAmount + tipAmount;
-    }, [items, selectedGuestId, taxPercentage, tipPercentage]);
+    // Percentages read naturally as rates; flat amounts are shown as this guest's share
+    const describeCharge = (value: number, mode: ChargeMode, share: number) =>
+        mode === 'percent' ? formatCharge(value, mode) : formatCharge(share, 'amount');
 
     if (!selectedGuestId) {
         return (
@@ -110,7 +102,7 @@ export function GuestView({ items, guests, onToggleAssignment, taxPercentage, ti
                         </p>
                         <p className="text-xs text-muted-foreground">
                             {paidAmount !== 0 && `$${myTotal.toFixed(2)} items `}
-                            (incl. {taxPercentage}% tax + {tipPercentage}% tip)
+                            (incl. {describeCharge(charges.tax, charges.taxMode, myTotals?.tax ?? 0)} tax + {describeCharge(charges.tip, charges.tipMode, myTotals?.tip ?? 0)} tip)
                         </p>
                         {paidAmount < 0 && (
                             <p className="text-xs text-muted-foreground">

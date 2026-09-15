@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Button } from './ui/button';
 import { Upload, Loader2, Image as ImageIcon } from 'lucide-react';
-import { processReceiptImage } from '../utils/ocrProcessor';
+import { processReceiptImage, AdminCredentials } from '../utils/ocrProcessor';
 import { ReceiptItem } from '../App';
 import { Progress } from './ui/progress';
 import heic2any from 'heic2any';
@@ -11,9 +11,10 @@ interface ImageUploaderProps {
   onItemsExtracted: (items: ReceiptItem[]) => void;
   isProcessing: boolean;
   setIsProcessing: (processing: boolean) => void;
+  admin: AdminCredentials;
 }
 
-export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing }: ImageUploaderProps) {
+export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing, admin }: ImageUploaderProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,7 +51,7 @@ export function ImageUploader({ onItemsExtracted, isProcessing, setIsProcessing 
     setProgress(10);
 
     try {
-      const items = await processReceiptImage(file, (p) => {
+      const items = await processReceiptImage(file, admin, (p) => {
         setProgress(10 + (p * 0.9));
       });
       onItemsExtracted(items);

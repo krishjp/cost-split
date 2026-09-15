@@ -53,6 +53,7 @@ export function GuestsSection({ guests, onAddGuest, onRemoveGuest, isAdmin }: Gu
           <Input
             value={newGuestName}
             onChange={(e) => setNewGuestName(e.target.value)}
+            maxLength={50}
             onKeyPress={handleKeyPress}
             placeholder="Enter guest name..."
             className="flex-1"
