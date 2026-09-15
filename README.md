@@ -15,9 +15,9 @@ Using **Gemini-based OCR**, the app automatically extracts items and prices. Gue
 - **OCR Text Extraction**: Uses Google Gemini & Python-based OCR to intelligently parse receipt images into editable line items.
 - **Real-Time Collaboration**: Built with **Socket.io**, ensuring that splits, joins, and payments update across all devices instantly without refreshing.
 - **Role-Based Access**:
-  - **Admin**: Created via PIN protection. Can edit items, upload receipts, and manage guests.
+  - **Admin**: Created via PIN protection. Can edit items, upload receipts, manage guests, set tax/tip, and record payments. Admin rights are enforced by the server.
   - **Guest**: Can join via link, claim items, and view their personal total.
-- **Smart Calculations**: Automatically handles tax and tip distribution based on the subtotal of items claimed by each guest.
+- **Smart Calculations**: Tax and tip can be entered as a percentage or a dollar amount, and are split in proportion to the items each guest claims. Admins can record payments, including negative amounts for shared costs someone else covered (e.g. gas).
 
 ## Technology Stack
 
@@ -105,7 +105,7 @@ Using **Gemini-based OCR**, the app automatically extracts items and prices. Gue
    npm run dev
    ```
 
-   Visit `http://localhost:5173` to see the app.
+   Visit `http://localhost:3000` to see the app.
 
 ## Cloud Deployment
 
@@ -113,7 +113,7 @@ Using **Gemini-based OCR**, the app automatically extracts items and prices. Gue
 The backend requires a cleaner environment that supports both Node.js and Python (for the receipt parser).
 - **Build Command**: `./render-build.sh` (This custom script installs both Node and Python deps)
 - **Start Command**: `npm start`
-- **Env Vars**: `MONGO_URI`, `GEMINI_API_KEY`
+- **Env Vars**: `MONGO_URI`, `GEMINI_API_KEY`, optionally `TRUST_PROXY` (number of proxy hops for rate limiting; defaults to `1` on Render)
 
 ### Frontend (Vercel)
 - **Build Command**: `npm run build`

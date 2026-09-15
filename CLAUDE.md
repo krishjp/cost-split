@@ -9,7 +9,7 @@ npm install                          # Node deps (frontend + backend share one p
 pip install -r server/requirements.txt   # Python deps for the receipt parser (Python 3.11, see .python-version)
 
 npm start        # Backend: Express + Socket.io on PORT (default 3001)
-npm run dev      # Frontend: Vite dev server on port 3000 (vite.config.ts; README's 5173 is outdated)
+npm run dev      # Frontend: Vite dev server on port 3000 (vite.config.ts)
 npm run build    # Frontend production build to dist/
 ```
 
@@ -28,7 +28,7 @@ Single repo, two deployables: React frontend (`src/`, hosted on Vercel) and a No
 - `isGuestView` toggles between the simplified `GuestView` (pick your name, tap items you ate) and the admin dashboard (`ImageUploader`, `ReceiptItemsSection`, `GuestsSection`, `SplitSummary`).
 
 ### State sync
-- `src/App.tsx` owns all session state (`receiptItems`, `guests`, `taxPercentage`, `tipPercentage`) and updates it optimistically. Two socket events write to the server:
+- `src/App.tsx` owns all session state (`receiptItems`, `guests`, and `charges` for tax/tip) and updates it optimistically. Two socket events write to the server:
   - `update-session` (admin token required): `syncUpdate` sends the **entire** changed array(s) and/or tax/tip; the server replaces those fields.
   - `toggle-assignment` (anyone with the link): `{ itemId, guestId, unitIndex, assigned }`, applied server-side to a single unit. This is the only write guests can make.
 - Both go through `runSessionAction`, which serializes writes per session with an in-process lock (assumes a single server instance), saves, and broadcasts `session-updated` to the rest of the room (not the sender). The sender gets a socket ack; on rejection it includes the authoritative session, which `handleActionResult` applies to roll back the optimistic update.
