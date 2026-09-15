@@ -385,7 +385,7 @@ export default function App() {
             <h1 className="text-4xl mb-2 font-bold text-primary">🍱 Cost Splitting Portal</h1>
             <p className="text-muted-foreground">Upload a receipt or add items manually to split the bill.</p>
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center justify-center md:justify-end">
             {isAdmin ? (
               <Button variant="outline" size="sm" onClick={handleLogout} className="text-red-500 hover:text-red-700 hover:bg-red-50">
                 <LogOut className="w-4 h-4 mr-2" />
