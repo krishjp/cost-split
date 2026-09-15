@@ -165,7 +165,7 @@ export function SplitSummary({
                   <div className="text-right">
                     <span className="font-bold block">${guestTotal.toFixed(2)}</span>
                     <span className={`text-[10px] ${remaining > 0.01 ? 'text-red-500' : 'text-green-600'}`}>
-                      {remaining > 0.01 ? `Owes $${remaining.toFixed(2)}` : 'Setted Up'}
+                      {remaining > 0.01 ? `Owes $${remaining.toFixed(2)}` : 'Settled Up'}
                     </span>
                   </div>
                 </div>

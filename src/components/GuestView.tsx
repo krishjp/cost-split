@@ -74,6 +74,11 @@ export function GuestView({ items, guests, onToggleAssignment, taxPercentage, ti
 
     const selectedGuest = guests.find(g => g.id === selectedGuestId);
 
+    // Match the summary's "Owes" amount: admin-entered payments reduce the balance,
+    // and negative payments (direct costs like gas covered by someone else) increase it.
+    const paidAmount = selectedGuest?.paidAmount || 0;
+    const amountOwed = myTotal - paidAmount;
+
     // Flatten items for display: Item A (Qty 2) -> Item A #1, Item A #2
     const displayItems = items.flatMap(item => {
         return Array.from({ length: item.quantity }).map((_, unitIndex) => ({
@@ -101,11 +106,22 @@ export function GuestView({ items, guests, onToggleAssignment, taxPercentage, ti
                         </div>
 
                         <p className="text-2xl font-bold text-primary mt-1">
-                            ${myTotal.toFixed(2)}
+                            ${amountOwed.toFixed(2)}
                         </p>
                         <p className="text-xs text-muted-foreground">
+                            {paidAmount !== 0 && `$${myTotal.toFixed(2)} items `}
                             (incl. {taxPercentage}% tax + {tipPercentage}% tip)
                         </p>
+                        {paidAmount < 0 && (
+                            <p className="text-xs text-muted-foreground">
+                                + ${Math.abs(paidAmount).toFixed(2)} extra costs
+                            </p>
+                        )}
+                        {paidAmount > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                                − ${paidAmount.toFixed(2)} already paid
+                            </p>
+                        )}
                     </div>
                 </div>
             </Card>
